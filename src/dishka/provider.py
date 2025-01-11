@@ -138,6 +138,7 @@ class Provider(BaseProvider):
             cache: bool = True,
             recursive: bool = False,
             override: bool = False,
+            dependency_overrides: dict[str, type] | None = None,
     ) -> CompositeDependencySource:
         if scope is None:
             scope = self.scope
@@ -148,6 +149,7 @@ class Provider(BaseProvider):
             cache=cache,
             recursive=recursive,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
         self._add_dependency_sources(str(source), composite.dependency_sources)
         return composite
@@ -159,6 +161,7 @@ class Provider(BaseProvider):
             cache: bool = True,
             recursive: bool = False,
             override: bool = False,
+            dependency_overrides: dict[str, type] | None = None,
     ) -> CompositeDependencySource:
         if scope is None:
             scope = self.scope
@@ -168,6 +171,7 @@ class Provider(BaseProvider):
             cache=cache,
             recursive=recursive,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
         self._add_dependency_sources("?", composite.dependency_sources)
         return composite
@@ -196,10 +200,12 @@ class Provider(BaseProvider):
             source: Callable[..., Any] | type,
             *,
             provides: Any = None,
+            dependency_overrides: dict[str, type] | None = None,
     ) -> CompositeDependencySource:
         composite = decorate_on_instance(
             source=source,
             provides=provides,
+            dependency_overrides=dependency_overrides,
         )
         self._add_dependency_sources(str(source), composite.dependency_sources)
         return composite

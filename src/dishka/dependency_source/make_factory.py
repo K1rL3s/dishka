@@ -193,6 +193,17 @@ def _params_without_hints(func: Any, *, skip_self: bool) -> Sequence[str]:
     ]
 
 
+def _override_hints(
+    hints: dict[str, type],
+    overrides: dict[str, type],
+) -> dict[str, type]:
+    new_hints = hints.copy()
+    for param, new_type in overrides.items():
+        if param in hints:
+            new_hints[param] = new_type
+    return new_hints
+
+
 def _make_factory_by_class(
         *,
         provides: Any,
@@ -200,6 +211,7 @@ def _make_factory_by_class(
         source: type,
         cache: bool,
         override: bool,
+        dependency_overrides: dict[str, type],
 ) -> Factory:
     if not provides:
         provides = source
@@ -231,6 +243,9 @@ def _make_factory_by_class(
         ) from e
 
     hints.pop("return", _empty)
+
+    hints = _override_hints(hints, dependency_overrides)
+
     params = signature(init).parameters
     kw_dependency_keys = {
         name: hint_to_dependency_key(hints.pop(name))
@@ -256,10 +271,11 @@ def _make_factory_by_function(
         *,
         provides: Any,
         scope: BaseScope | None,
-        source: Callable[..., Any] | classmethod, # type: ignore[type-arg]
+        source: Callable[..., Any] | classmethod,  # type: ignore[type-arg]
         cache: bool,
         is_in_class: bool,
         override: bool,
+        dependency_overrides: dict[str, type],
 ) -> Factory:
     # typing.cast is applied as unwrap takes a Callable object
     raw_source = unwrap(cast(Callable[..., Any], source))
@@ -294,6 +310,8 @@ def _make_factory_by_function(
             # if we will bind factory to provider instance
             hints = {self.name: Any, **hints}
     possible_dependency = hints.pop("return", _empty)
+
+    hints = _override_hints(hints, dependency_overrides)
 
     kw_dependency_keys = {
         name: hint_to_dependency_key(hints.pop(name))
@@ -332,6 +350,7 @@ def _make_factory_by_static_method(
         source: staticmethod,  # type: ignore[type-arg]
         cache: bool,
         override: bool,
+        dependency_overrides: dict[str, type],
 ) -> Factory:
     if missing_hints := _params_without_hints(source, skip_self=False):
         name = get_name(source, include_module=True)
@@ -355,6 +374,8 @@ def _make_factory_by_static_method(
         ) from e
 
     possible_dependency = hints.pop("return", _empty)
+
+    hints = _override_hints(hints, dependency_overrides)
 
     params = signature(source).parameters
     kw_dependency_keys = {
@@ -394,6 +415,7 @@ def _make_factory_by_other_callable(
         source: Callable[..., Any],
         cache: bool,
         override: bool,
+        dependency_overrides: dict[str, type],
 ) -> Factory:
     if _is_bound_method(source):
         to_check = source.__func__  # type: ignore[attr-defined]
@@ -406,6 +428,7 @@ def _make_factory_by_other_callable(
         scope=scope,
         is_in_class=True,
         override=override,
+        dependency_overrides=dependency_overrides,
     )
     if factory.is_to_bind:
         dependencies = factory.dependencies[1:]  # remove `self`
@@ -432,6 +455,7 @@ def make_factory(
         cache: bool,
         is_in_class: bool,
         override: bool,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> Factory:
     if get_origin(source) is ProvideMultiple:
         if provides is None:
@@ -441,6 +465,9 @@ def make_factory(
     if is_bare_generic(source):
         source = source[get_type_vars(source)]  # type: ignore[index]
 
+    if dependency_overrides is None:
+        dependency_overrides = {}
+
     if isclass(source) or get_origin(source):
         return _make_factory_by_class(
             provides=provides,
@@ -448,6 +475,7 @@ def make_factory(
             source=cast(type, source),
             cache=cache,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
     elif isfunction(source) or isinstance(source, classmethod):
         return _make_factory_by_function(
@@ -457,6 +485,7 @@ def make_factory(
             cache=cache,
             is_in_class=is_in_class,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
     elif isbuiltin(source):
         return _make_factory_by_function(
@@ -466,6 +495,7 @@ def make_factory(
             cache=cache,
             is_in_class=False,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
     elif isinstance(source, staticmethod):
         return _make_factory_by_static_method(
@@ -474,6 +504,7 @@ def make_factory(
             source=source,
             cache=cache,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
     elif callable(source):
         return _make_factory_by_other_callable(
@@ -482,6 +513,7 @@ def make_factory(
             source=source,
             cache=cache,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
     else:
         raise TypeError(f"Cannot use {type(source)} as a factory")
@@ -496,6 +528,7 @@ def _provide(
         is_in_class: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     composite = ensure_composite(source)
     factory = make_factory(
@@ -503,6 +536,7 @@ def _provide(
         source=composite.origin, cache=cache,
         is_in_class=is_in_class,
         override=override,
+        dependency_overrides=dependency_overrides,
     )
     composite.dependency_sources.extend(unpack_factory(factory))
     if not recursive:
@@ -520,6 +554,7 @@ def _provide(
                 cache=cache,
                 is_in_class=is_in_class,
                 override=override,
+                dependency_overrides=dependency_overrides,
             )
             composite.dependency_sources.extend(additional.dependency_sources)
     return composite
@@ -533,11 +568,13 @@ def provide_on_instance(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     return _provide(
         provides=provides, scope=scope, source=source, cache=cache,
         is_in_class=False,
         recursive=recursive, override=override,
+        dependency_overrides=dependency_overrides,
     )
 
 
@@ -549,6 +586,7 @@ def provide(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> Callable[[Callable[..., Any]], CompositeDependencySource]:
     ...
 
@@ -562,6 +600,7 @@ def provide(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     ...
 
@@ -574,6 +613,7 @@ def provide(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource | Callable[
     [Callable[..., Any]], CompositeDependencySource,
 ]:
@@ -597,18 +637,21 @@ def provide(
     :param cache: save created object to scope cache or not
     :param recursive: register dependencies as factories as well
     :param override: dependency override
+    :param dependency_overrides: override type hints by params name
     :return: instance of Factory or a decorator returning it
     """
     if source is not None:
         return _provide(
             provides=provides, scope=scope, source=source, cache=cache,
             is_in_class=True, recursive=recursive, override=override,
+            dependency_overrides=dependency_overrides,
         )
 
     def scoped(func: Callable[..., Any]) -> CompositeDependencySource:
         return _provide(
             provides=provides, scope=scope, source=func, cache=cache,
             is_in_class=True, recursive=recursive, override=override,
+            dependency_overrides=dependency_overrides,
         )
 
     return scoped
@@ -622,6 +665,7 @@ def _provide_all(
         is_in_class: bool,
         recursive: bool,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     composite = CompositeDependencySource(None)
     for single_provides in provides:
@@ -633,6 +677,7 @@ def _provide_all(
             is_in_class=is_in_class,
             recursive=recursive,
             override=override,
+            dependency_overrides=dependency_overrides,
         )
         composite.dependency_sources.extend(source.dependency_sources)
     return composite
@@ -644,11 +689,13 @@ def provide_all(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     return _provide_all(
         provides=provides, scope=scope,
         cache=cache, is_in_class=True,
         recursive=recursive, override=override,
+        dependency_overrides=dependency_overrides,
     )
 
 
@@ -658,9 +705,11 @@ def provide_all_on_instance(
         cache: bool = True,
         recursive: bool = False,
         override: bool = False,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     return _provide_all(
         provides=provides, scope=scope,
         cache=cache, is_in_class=False,
         recursive=recursive, override=override,
+        dependency_overrides=dependency_overrides,
     )

@@ -13,6 +13,7 @@ def _decorate(
         provides: Any = None,
         *,
         is_in_class: bool = True,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     composite = ensure_composite(source)
     decorator = Decorator(
@@ -23,6 +24,7 @@ def _decorate(
             cache=False,
             is_in_class=is_in_class,
             override=False,
+            dependency_overrides=dependency_overrides,
         ),
     )
     if (
@@ -43,6 +45,7 @@ def _decorate(
 def decorate(
         *,
         provides: Any = None,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> Callable[
     [Callable[..., Any]], CompositeDependencySource,
 ]:
@@ -54,6 +57,7 @@ def decorate(
         source: Callable[..., Any] | type,
         *,
         provides: Any = None,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
     ...
 
@@ -61,14 +65,25 @@ def decorate(
 def decorate(
         source: Callable[..., Any] | type | None = None,
         provides: Any = None,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource | Callable[
     [Callable[..., Any]], CompositeDependencySource,
 ]:
     if source is not None:
-        return _decorate(source, provides, is_in_class=True)
+        return _decorate(
+            source,
+            provides,
+            is_in_class=True,
+            dependency_overrides=dependency_overrides,
+        )
 
     def scoped(func: Callable[..., Any]) -> CompositeDependencySource:
-        return _decorate(func, provides, is_in_class=True)
+        return _decorate(
+            func,
+            provides,
+            is_in_class=True,
+            dependency_overrides=dependency_overrides,
+        )
 
     return scoped
 
@@ -76,6 +91,11 @@ def decorate(
 def decorate_on_instance(
         source: Callable[..., Any] | type,
         provides: Any = None,
+        dependency_overrides: dict[str, type] | None = None,
 ) -> CompositeDependencySource:
-    return _decorate(source, provides, is_in_class=False)
-
+    return _decorate(
+        source,
+        provides,
+        is_in_class=False,
+        dependency_overrides=dependency_overrides,
+    )
