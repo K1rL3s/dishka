@@ -73,11 +73,8 @@ def test_dependency_overrides_class():
     container.get(A)
 
 
-# fails on `A.foo`, issue?
-@pytest.mark.skip(reason="fails on `A.foo`")
 def test_dependency_overrides_static_method():
     class A:
-        @provide(dependency_overrides={"arg": int})
         @staticmethod
         def foo(arg: str) -> None:
             assert isinstance(arg, int)
@@ -109,11 +106,8 @@ def test_dependency_overrides_static_method_in_provider():
     container.get(NoneType)
 
 
-# fails on `A.foo`, issue?
-@pytest.mark.skip(reason="fails on `A.foo`")
 def test_dependency_overrides_class_method():
     class A:
-        @provide(dependency_overrides={"arg": int})
         @classmethod
         def foo(cls: type, arg: str) -> None:
             assert isinstance(arg, int)
@@ -147,7 +141,7 @@ def test_dependency_overrides_class_method_in_provider():
 
 # fails with non-typed builtin funcs,
 # override that by dependency_overrides?
-@pytest.mark.skip(reason="fail with non-typed builtins")
+@pytest.mark.skip(reason="fails with non-typed builtins")
 def test_dependency_overrides_builtin():
     provider = Provider(scope=Scope.APP)
 
